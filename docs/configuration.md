@@ -375,7 +375,7 @@ These settings accept both TOML and environment variables. Env vars are integer 
 | `kube_client_qps` | float | `0` (client-go default) | `KUBE_CLIENT_QPS` | Kubernetes client QPS limit. `0` leaves client-go defaults. |
 | `kube_client_burst` | integer | `0` (client-go default) | `KUBE_CLIENT_BURST` | Kubernetes client burst. `0` leaves client-go defaults. |
 | `kubeconfig_debounce_window` | duration | `"100ms"` | `KUBECONFIG_DEBOUNCE_WINDOW_MS` | Debounce window for kubeconfig file changes. |
-| `cluster_state_poll_interval` | duration | `"30s"` | `CLUSTER_STATE_POLL_INTERVAL_MS` | Poll interval for cluster API discovery changes. |
+| `cluster_state_poll_interval` | duration | `"30s"` | `CLUSTER_STATE_POLL_INTERVAL_MS` | Poll interval for cluster API discovery changes. A negative value disables the initial watcher discovery and periodic polling, then refreshes discovery on demand. Zero uses the 30-second default. |
 | `cluster_state_debounce_window` | duration | `"5s"` | `CLUSTER_STATE_DEBOUNCE_WINDOW_MS` | Debounce window for cluster state reloads. |
 | `workspace_poll_interval` | duration | `"60s"` | `WORKSPACE_POLL_INTERVAL_MS` | Poll interval for kcp workspace changes. |
 | `workspace_debounce_window` | duration | `"5s"` | `WORKSPACE_DEBOUNCE_WINDOW_MS` | Debounce window for kcp workspace reloads. |
@@ -386,6 +386,8 @@ kube_client_burst = 100
 kubeconfig_debounce_window = "50ms"
 cluster_state_poll_interval = "10s"
 ```
+
+To disable cluster state polling, set `cluster_state_poll_interval = "-1s"` in TOML or `CLUSTER_STATE_POLL_INTERVAL_MS=-1` in the environment. The server then stops the watcher's initial discovery, periodic polling, and automatic tool visibility updates. It invalidates cached discovery when a Kubernetes request acquires the shared client. The next operation that needs discovery fetches fresh API resources with the configured credentials. This can make such operations slower. Operations that use typed Kubernetes clients without discovery do not fetch API resources. Idle connections, MCP initialization, ping, and tool listing do not trigger this refresh. Kubeconfig file watching remains active. Target compatibility filtering can request discovery at startup independently. The kcp provider also discovers workspaces at startup and uses separate workspace polling settings.
 
 None of these take effect on SIGHUP; restart the process.
 

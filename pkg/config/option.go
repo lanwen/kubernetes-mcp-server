@@ -331,6 +331,13 @@ func parseEnvDurationMS(s string) (time.Duration, error) {
 	return time.Duration(ms) * time.Millisecond, nil
 }
 
+func parseEnvSignedDurationMS(s string) (time.Duration, error) {
+	if _, err := strconv.Atoi(s); err != nil {
+		return 0, fmt.Errorf("expected integer milliseconds, got %q", s)
+	}
+	return time.ParseDuration(s + "ms")
+}
+
 func walkOptions(v any, fn func(o option, path string)) {
 	walkValue(reflect.ValueOf(v), "", fn, nil)
 }

@@ -200,8 +200,13 @@ func (m *Manager) Derived(ctx context.Context) (*Kubernetes, error) {
 	// token-less requests with 401, but this protects STDIO / internal paths and
 	// preserves the operator contract that require_oauth=true never falls through to kubeconfig.
 	if !hasToken {
-		if cfg := m.config.Load(); cfg != nil && cfg.RequireOAuth.Get() {
+		cfg := m.config.Load()
+		if cfg != nil && cfg.RequireOAuth.Get() {
 			return nil, errors.New("oauth token required")
+		}
+		if cfg != nil && cfg.ClusterStatePollInterval.Get() < 0 {
+			// Reset is local; discovery runs only if this request needs it.
+			m.kubernetes.RESTMapper().Reset()
 		}
 		logger.V(5).Info("No bearer token in context, falling back to kubeconfig credentials")
 		return m.kubernetes, nil

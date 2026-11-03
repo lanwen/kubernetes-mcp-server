@@ -6,16 +6,54 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/containers/kubernetes-mcp-server/internal/test"
 	"github.com/containers/kubernetes-mcp-server/pkg/config"
 	"github.com/stretchr/testify/suite"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
 type DerivedTestSuite struct {
 	suite.Suite
+}
+
+func (s *DerivedTestSuite) TestNegativePollIntervalRefreshesDiscoveryOnRequest() {
+	server := test.NewMockServer()
+	defer server.Close()
+	handler := test.NewDiscoveryClientHandler()
+	server.Handle(handler)
+	var requests atomic.Int32
+	server.Handle(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests.Add(1)
+	}))
+	cfg := config.BaseDefault()
+	cfg.KubeConfig.SetForTest(server.KubeconfigFile(s.T()))
+	cfg.ClusterStatePollInterval.SetForTest(-time.Second)
+	manager, err := NewKubeconfigManager(s.T().Context(), cfg, "")
+	s.Require().NoError(err)
+	defer manager.Close()
+
+	first, err := manager.Derived(s.T().Context())
+	s.Require().NoError(err)
+	s.Zero(requests.Load(), "acquiring a client must not make discovery requests")
+	before, err := first.DiscoveryClient().ServerResourcesForGroupVersion("v1")
+	s.Require().NoError(err)
+	s.NotContains(before.APIResources, metav1.APIResource{Name: "configmaps", Kind: "ConfigMap"})
+	initialRequests := requests.Load()
+
+	handler.APIResourceLists[0].APIResources = append(handler.APIResourceLists[0].APIResources,
+		metav1.APIResource{Name: "configmaps", Kind: "ConfigMap"})
+	second, err := manager.Derived(s.T().Context())
+	s.Require().NoError(err)
+	s.Equal(initialRequests, requests.Load(), "refresh must be lazy until discovery is requested")
+	after, err := second.DiscoveryClient().ServerResourcesForGroupVersion("v1")
+	s.Require().NoError(err)
+	s.Contains(after.APIResources, metav1.APIResource{Name: "configmaps", Kind: "ConfigMap"})
+	s.Greater(requests.Load(), initialRequests, "next discovery must contact the cluster")
 }
 
 func (s *DerivedTestSuite) TestKubeConfig() {

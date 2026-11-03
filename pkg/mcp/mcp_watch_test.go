@@ -2,13 +2,17 @@ package mcp
 
 import (
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/containers/kubernetes-mcp-server/internal/test"
 	"github.com/containers/kubernetes-mcp-server/pkg/config/configtest"
 	"github.com/stretchr/testify/suite"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -222,6 +226,38 @@ func (s *WatchClusterStateSuite) TearDownTest() {
 
 func (s *WatchClusterStateSuite) AddAPIGroup(groupVersion string) {
 	s.handler.AddAPIResourceList(metav1.APIResourceList{GroupVersion: groupVersion})
+}
+
+func (s *WatchClusterStateSuite) TestNegativeIntervalSkipsStartupDiscovery() {
+	var requests atomic.Int32
+	s.mockServer.Handle(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests.Add(1)
+	}))
+	s.mockServer.Handle(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if strings.HasSuffix(req.URL.Path, "/pods") {
+			test.WriteObject(w, &corev1.PodList{TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "PodList"}})
+		}
+	}))
+	configtest.OverlayTOML(s.T(), &s.Cfg, `cluster_state_poll_interval = "-1s"`)
+	s.Cfg.EnableTargetCompatibilityToolFilters.SetForTest(false)
+
+	s.InitMcpClient()
+	s.Require().NotNil(s.InitializeResult)
+	s.Require().NoError(s.Session.Ping(s.T().Context(), nil))
+	_, err := s.ListTools()
+	s.Require().NoError(err)
+	s.Zero(requests.Load(), "MCP initialization, ping, and tools/list must not contact the cluster")
+	configResult, err := s.CallTool("configuration_view", map[string]any{"minified": false})
+	s.Require().NoError(err)
+	s.Require().NotNil(configResult)
+	s.False(configResult.IsError)
+	s.Zero(requests.Load(), "a configuration-only tool must not contact the cluster")
+
+	result, err := s.CallTool("pods_list", map[string]any{"namespace": "default"})
+	s.Require().NoError(err)
+	s.Require().NotNil(result)
+	s.False(result.IsError, "Kubernetes tool call must succeed after disabling cluster state polling")
+	s.Positive(requests.Load(), "a Kubernetes tool call must still contact the cluster")
 }
 
 func (s *WatchClusterStateSuite) TestNotifiesToolsChangeOnAPIGroupAddition() {
