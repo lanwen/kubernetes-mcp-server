@@ -117,7 +117,7 @@ func (s *ClusterStateTestSuite) TestNewClusterState() {
 		})
 	})
 
-	s.Run("non-positive poll interval uses default", func() {
+	s.Run("non-positive poll interval behavior", func() {
 		s.mockServer.Handle(test.NewDiscoveryClientHandler())
 		discoveryClient := memory.NewMemCacheClient(discovery.NewDiscoveryClientForConfigOrDie(s.mockServer.Config()))
 
@@ -126,9 +126,9 @@ func (s *ClusterStateTestSuite) TestNewClusterState() {
 			s.Equal(30*time.Second, watcher.pollInterval)
 		})
 
-		s.Run("negative uses default", func() {
+		s.Run("negative disables polling", func() {
 			watcher := NewClusterState(s.T().Context(), discoveryClient, -100*time.Millisecond, 0)
-			s.Equal(30*time.Second, watcher.pollInterval)
+			s.Equal(-100*time.Millisecond, watcher.pollInterval)
 		})
 	})
 
@@ -149,6 +149,31 @@ func (s *ClusterStateTestSuite) TestNewClusterState() {
 }
 
 func (s *ClusterStateTestSuite) TestWatch() {
+	s.Run("negative interval skips discovery and callback", func() {
+		defer s.mockServer.ResetHandlers()
+		var requests atomic.Int32
+		s.mockServer.Handle(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			requests.Add(1)
+		}))
+		s.mockServer.Handle(test.NewDiscoveryClientHandler())
+		discoveryClient := memory.NewMemCacheClient(discovery.NewDiscoveryClientForConfigOrDie(s.mockServer.Config()))
+		watcher := NewClusterState(s.T().Context(), discoveryClient, -time.Millisecond, 0)
+		var callbacks atomic.Int32
+		watcher.Watch(s.T().Context(), func() error {
+			callbacks.Add(1)
+			return nil
+		})
+		watcher.Watch(s.T().Context(), func() error {
+			callbacks.Add(1)
+			return nil
+		})
+		s.Never(func() bool { return requests.Load() > 0 || callbacks.Load() > 0 }, 50*time.Millisecond, eventuallyTick)
+		watcher.Close()
+		watcher.Close()
+		s.Zero(requests.Load(), "disabled watcher must not contact the API server")
+		s.Zero(callbacks.Load(), "disabled watcher must not reload")
+	})
+
 	s.Run("captures initial cluster state", func() {
 		s.mockServer.Handle(test.NewDiscoveryClientHandler())
 		discoveryClient := memory.NewMemCacheClient(discovery.NewDiscoveryClientForConfigOrDie(s.mockServer.Config()))

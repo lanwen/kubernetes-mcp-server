@@ -41,7 +41,7 @@ type ClusterState struct {
 var _ Watcher = (*ClusterState)(nil)
 
 func NewClusterState(ctx context.Context, discoveryClient discovery.CachedDiscoveryInterface, pollInterval, debounceWindow time.Duration) *ClusterState {
-	if pollInterval <= 0 {
+	if pollInterval == 0 {
 		pollInterval = DefaultClusterStatePollInterval
 	}
 	if debounceWindow <= 0 {
@@ -63,6 +63,9 @@ func NewClusterState(ctx context.Context, discoveryClient discovery.CachedDiscov
 // and triggers a debounced reload when changes are detected.
 // It can only be called once per ClusterState instance.
 func (w *ClusterState) Watch(ctx context.Context, onChange func() error) {
+	if w.pollInterval < 0 {
+		return
+	}
 	logger := klogutil.FromContext(ctx)
 
 	w.mu.Lock()

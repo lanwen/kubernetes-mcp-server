@@ -375,6 +375,9 @@ type Config struct {
 	// KubeconfigDebounceWindow is the debounce window for kubeconfig file changes.
 	KubeconfigDebounceWindow Option[time.Duration]
 	// ClusterStatePollInterval is the poll interval for cluster API discovery changes.
+	// A negative value disables the cluster state watcher, including its initial discovery,
+	// and refreshes cached discovery on demand for Kubernetes requests.
+	// Zero uses the default interval.
 	ClusterStatePollInterval Option[time.Duration]
 	// ClusterStateDebounceWindow is the debounce window for cluster state reloads.
 	ClusterStateDebounceWindow Option[time.Duration]
@@ -493,7 +496,7 @@ func newConfig() *Config {
 		KubeconfigDebounceWindow: opt("kubeconfig_debounce_window", 100*time.Millisecond).
 			env("KUBECONFIG_DEBOUNCE_WINDOW_MS", parseEnvDurationMS).desc("Debounce window for kubeconfig file changes"),
 		ClusterStatePollInterval: opt("cluster_state_poll_interval", 30*time.Second).
-			env("CLUSTER_STATE_POLL_INTERVAL_MS", parseEnvDurationMS).desc("Poll interval for cluster state changes"),
+			env("CLUSTER_STATE_POLL_INTERVAL_MS", parseEnvSignedDurationMS).desc("Poll interval for cluster state changes; negative disables background polling and refreshes discovery on demand, zero uses the default"),
 		ClusterStateDebounceWindow: opt("cluster_state_debounce_window", 5*time.Second).
 			env("CLUSTER_STATE_DEBOUNCE_WINDOW_MS", parseEnvDurationMS).desc("Debounce window for cluster state changes"),
 		WorkspacePollInterval: opt("workspace_poll_interval", 60*time.Second).

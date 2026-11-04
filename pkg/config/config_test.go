@@ -1324,6 +1324,13 @@ func (s *ConfigSuite) TestClientAndWatcherEnvVars() {
 		s.Equal(50*time.Millisecond, cfg.ClusterStatePollInterval.Get())
 		s.Equal(SourceEnv, cfg.ClusterStatePollInterval.Source())
 	})
+	s.Run("negative CLUSTER_STATE_POLL_INTERVAL_MS disables polling", func() {
+		s.T().Setenv("CLUSTER_STATE_POLL_INTERVAL_MS", "-1")
+		cfg, err := ReadToml(s.T().Context(), nil)
+		s.Require().NoError(err)
+		s.Equal(-time.Millisecond, cfg.ClusterStatePollInterval.Get())
+		s.Equal(SourceEnv, cfg.ClusterStatePollInterval.Source())
+	})
 	s.Run("CLUSTER_STATE_DEBOUNCE_WINDOW_MS maps to cluster_state_debounce_window", func() {
 		s.T().Setenv("CLUSTER_STATE_DEBOUNCE_WINDOW_MS", "10")
 		cfg, err := ReadToml(s.T().Context(), nil)
